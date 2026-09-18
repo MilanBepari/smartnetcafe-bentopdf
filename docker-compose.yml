@@ -1,0 +1,50 @@
+services:
+  bentopdf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Blank means BentoPDF is served from the root of the hostname.
+        BASE_URL: ""
+        SITE_URL: ${SITE_URL:-https://pdf.smartnetcafe.com}
+        SIMPLE_MODE: ${SIMPLE_MODE:-false}
+        DISABLE_GITHUB_STARS: ${DISABLE_GITHUB_STARS:-true}
+        COMPRESSION_MODE: ${COMPRESSION_MODE:-all}
+    image: smartnet-bentopdf:latest
+    container_name: smartnet-bentopdf
+    restart: unless-stopped
+    # Host port publishing is intentionally disabled while Cloudflare Tunnel
+    # reaches BentoPDF over the shared smartnet_bento Docker network.
+    # ports:
+    #   - '${BENTOPDF_BIND_ADDRESS:-127.0.0.1}:${BENTOPDF_PORT:-8080}:8080'
+    environment:
+      # Most Docker hosts, including IPv4-only VPS instances, do not provide
+      # an IPv6 socket. Set DISABLE_IPV6=false only when the host supports it.
+      DISABLE_IPV6: ${DISABLE_IPV6:-true}
+    networks:
+      - smartnet_bento
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: smartnet-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      # Keep the actual token in the ignored .env file or inject it through
+      # the host environment. Cloudflared reads it as TUNNEL_TOKEN.
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      bentopdf:
+        condition: service_healthy
+    networks:
+      - smartnet_bento
+
+networks:
+  smartnet_bento:
+    name: smartnet_bento
